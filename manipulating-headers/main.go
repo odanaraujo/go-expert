@@ -1,6 +1,14 @@
 package main
 
-import "net/http"
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+)
+
+const url = "https://viacep.com.br/ws/%s/json/"
 
 type Address struct {
 	Cep         string `json:"cep"`
@@ -24,6 +32,7 @@ func main() {
 func BuscaCepHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		w.WriteHeader(http.StatusNotFound)
+		return
 	}
 
 	cepParam := r.URL.Query().Get("cep")
@@ -34,7 +43,52 @@ func BuscaCepHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	adress, err := getCep(cepParam)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
+	//toda essa linha comentada
+	/*
+		result, err := json.Marshal(adress)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Write(result)
+	*/
+
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Hello, world!"))
+	//é exatamente essa linha aqui
+	if err := json.NewEncoder(w).Encode(adress); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(err.Error()))
+		return
+	}
+}
+
+func getCep(zipCode string) (*Address, error) {
+	req, err := http.Get(fmt.Sprintf(url, zipCode))
+
+	if err != nil {
+		return nil, errors.New("error in the request")
+	}
+
+	defer req.Body.Close()
+
+	res, err := io.ReadAll(req.Body)
+
+	if err != nil {
+		return nil, errors.New("error in reading the response")
+	}
+
+	var address Address
+	if err := json.Unmarshal(res, &address); err != nil {
+		return nil, errors.New("error in unmarshal")
+	}
+
+	return &address, nil
 }
